@@ -79,3 +79,28 @@ REQUEST_HEADERS = {
     )
 }
  
+
+# ── Embedding model (Phase 2 + 3) ───────────────────────────
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+# ── Ollama (Phase 2 + 3) ────────────────────────────────────
+OLLAMA_BASE_URL   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL      = os.getenv("OLLAMA_MODEL", "phi3:mini")
+OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", 300))
+
+# ── Processing (Phase 2) ────────────────────────────────────
+HDBSCAN_MIN_CLUSTER_SIZE = int(os.getenv("HDBSCAN_MIN_CLUSTER_SIZE", 3))
+HDBSCAN_MIN_SAMPLES      = int(os.getenv("HDBSCAN_MIN_SAMPLES", 2))
+PROCESSING_MIN_BATCH     = int(os.getenv("PROCESSING_MIN_BATCH", 10))
+
+# ── ChromaDB (Phase 3) ──────────────────────────────────────
+# Persistent directory where Chroma stores its data files.
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "data/chroma")
+# Name of the collection inside ChromaDB that holds cluster summaries.
+CHROMA_COLLECTION  = os.getenv("CHROMA_COLLECTION", "news_clusters")
+
+# ── RAG (Phase 3) ───────────────────────────────────────────
+# Number of top-k clusters retrieved per query.
+RAG_TOP_K           = int(os.getenv("RAG_TOP_K", 5))
+# Minimum cosine similarity score to include a result (0–1).
+RAG_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", 0.0))
