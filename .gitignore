@@ -1,0 +1,15 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local databases and vector stores
+data/
+
+# Environment variables (contains private GNEWS_API_KEY)
+.env
+
+# OS-generated files
+.DS_Store
+Thumbs.db

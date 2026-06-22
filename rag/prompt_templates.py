@@ -12,17 +12,13 @@ rag_user_prompt — Formats the retrieved context + the user's question
                   into a single user-turn prompt string.
 """
 
-# ── System prompt ─────────────────────────────────────────────────────────────
+SYSTEM_PROMPT = """You are a helpful news assistant. Answer the user's question using ONLY the provided news context.
 
-SYSTEM_PROMPT = """You are a news assistant with access to recent news summaries.
-Your job is to answer the user's question using ONLY the provided news context.
-
-Rules:
-- Answer factually and concisely.
-- If the context does not contain enough information to answer, say so clearly.
-- Do not invent facts or reference knowledge outside the provided summaries.
-- If multiple topics are relevant, synthesise them into a coherent answer.
-- Keep your answer under 200 words unless the user asks for more detail."""
+Guidelines:
+1. Provide a factual and direct answer based on the provided summaries.
+2. If the context does not contain relevant information to answer the user's specific question, state clearly that you couldn't find any news about that topic in the database.
+3. Do not make up facts or use outside knowledge.
+4. Keep answers brief (under 120 words)."""
 
 
 # ── User prompt builder ───────────────────────────────────────────────────────
@@ -65,10 +61,23 @@ def rag_user_prompt(query: str, context_clusters: list[dict]) -> str:
 # ── Fallback prompt (no vector DB results) ────────────────────────────────────
 
 def no_context_prompt(query: str) -> str:
-    """Prompt used when the vector DB is empty or returns nothing."""
-    return (
-        f"The user asked: {query}\n\n"
-        "There are no news summaries available in the database yet. "
-        "Politely inform the user and suggest running the ingestion + "
-        "processing pipeline to populate the news database."
-    )
+    """Prompt used when the vector DB returns nothing."""
+    from storage.database import article_count
+    try:
+        counts = article_count()
+        total_articles = counts.get("total", 0)
+    except Exception:
+        total_articles = 0
+        
+    if total_articles == 0:
+        return (
+            f"The user asked: {query}\n\n"
+            "There are no articles in the database. "
+            "Politely inform the user that the database is currently empty and suggest running ingestion and processing to load some news."
+        )
+    else:
+        return (
+            f"The user asked: {query}\n\n"
+            f"The database contains {total_articles} articles, but none of them are semantically relevant to their query. "
+            "Politely inform the user that you couldn't find any matching news articles in the database for their query."
+        )

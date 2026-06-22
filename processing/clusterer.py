@@ -71,8 +71,8 @@ def _reduce_dimensions(embeddings: np.ndarray) -> np.ndarray:
         reduced = reducer.fit_transform(embeddings)
         logger.info("UMAP complete → shape %s", reduced.shape)
         return reduced
-    except ImportError:
-        logger.warning("umap-learn not installed — skipping UMAP reduction.")
+    except Exception as exc:
+        logger.warning("umap-learn import or execution failed (%s) — skipping UMAP reduction.", exc)
         return embeddings
 
 

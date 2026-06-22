@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity News — Personalized News Summarizer</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Main Style sheet link -->
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="glow-bg"></div>
+    
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="logo">
+                <i class="fa-solid fa-bolt logo-icon"></i>
+                <h1>Antigravity News</h1>
+                <span class="badge">Personalized AI Summarizer</span>
+            </div>
+            <div class="health-checks">
+                <div class="health-item" id="backend-status">
+                    <span class="dot yellow"></span>
+                    <span>API Server: Connecting...</span>
+                </div>
+                <div class="health-item" id="ollama-status">
+                    <span class="dot yellow"></span>
+                    <span>Ollama LLM: Connecting...</span>
+                </div>
+                <button class="btn btn-icon" id="btn-refresh" title="Refresh Dashboard">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- DASHBOARD BODY -->
+        <main class="app-body">
+            <!-- LEFT COLUMN: CONTROL & PROFILES -->
+            <div class="side-panel">
+                <!-- METRICS SECTION -->
+                <div class="panel-card metrics-card">
+                    <h3><i class="fa-solid fa-chart-simple"></i> System Metrics</h3>
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <span class="metric-val" id="val-total-articles">0</span>
+                            <span class="metric-lbl">Total Articles</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-val" id="val-unprocessed">0</span>
+                            <span class="metric-lbl">Unprocessed</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-val" id="val-total-clusters">0</span>
+                            <span class="metric-lbl">Topic Clusters</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTROL ROOM -->
+                <div class="panel-card control-card">
+                    <h3><i class="fa-solid fa-sliders"></i> Control Center</h3>
+                    <div class="control-actions">
+                        <button class="btn btn-primary btn-full" id="btn-ingest">
+                            <i class="fa-solid fa-cloud-arrow-down"></i> Trigger Article Ingestion
+                        </button>
+                        <div class="job-status-indicator hidden" id="ingest-spinner">
+                            <i class="fa-solid fa-circle-notch fa-spin"></i> Ingestion crawler running...
+                        </div>
+                        
+                        <button class="btn btn-accent btn-full" id="btn-process">
+                            <i class="fa-solid fa-network-wired"></i> Run Processing & Cluster
+                        </button>
+                        <div class="job-status-indicator hidden" id="process-spinner">
+                            <i class="fa-solid fa-circle-notch fa-spin"></i> Embedding & clustering model running...
+                        </div>
+                    </div>
+                    <div class="status-logs" id="control-logs">
+                        System ready.
+                    </div>
+                </div>
+
+                <!-- USER PERSONALIZATION PROFILES -->
+                <div class="panel-card profile-card">
+                    <h3><i class="fa-solid fa-user-gear"></i> User Profile Profile</h3>
+                    <div class="profile-input-group">
+                        <label for="select-user">Select/Create User ID:</label>
+                        <div class="input-with-button">
+                            <input type="text" id="input-user-id" value="alice" placeholder="Enter User ID">
+                            <button class="btn btn-secondary" id="btn-load-profile">Load</button>
+                        </div>
+                    </div>
+                    
+                    <div class="preference-visualizer">
+                        <h4>Cluster Preference Weights</h4>
+                        <div class="weights-list" id="weights-container">
+                            <div class="empty-state">No interactions recorded. Interact with news clusters to train this user profile.</div>
+                        </div>
+                    </div>
+                    
+                    <div class="feedback-history-section">
+                        <h4>Feedback Audit Log</h4>
+                        <div class="feedback-table-wrapper">
+                            <table class="feedback-table">
+                                <thead>
+                                    <tr>
+                                        <th>Cluster</th>
+                                        <th>Signal</th>
+                                        <th>Value</th>
+                                        <th>Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="feedback-log-body">
+                                    <tr>
+                                        <td colspan="4" class="no-logs">No feedback logged.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: SEARCH, CHAT & CLUSTERS -->
+            <div class="content-panel">
+                <!-- RAG SEARCH / CHAT -->
+                <div class="content-card chat-card">
+                    <div class="chat-header">
+                        <h3><i class="fa-solid fa-comments"></i> Ask AI News Assistant (RAG)</h3>
+                        <div class="chat-options">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-personalization" checked>
+                                <span class="slider"></span>
+                            </label>
+                            <span class="toggle-label">Personalize Search Results</span>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-viewport" id="chat-viewport">
+                        <div class="chat-bubble assistant">
+                            Hello! I am your Personalized News Assistant. Ask me anything about the latest news in database (e.g., "What are the latest developments with NASA?", "What is going on in tech?").
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-input" placeholder="Type your question here...">
+                        <button class="btn btn-accent" id="btn-chat-send">
+                            <i class="fa-solid fa-paper-plane"></i> Send
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TOPIC CLUSTERS DIRECTORY -->
+                <div class="clusters-header">
+                    <h2><i class="fa-solid fa-folder-open"></i> Topic Clusters Directory</h2>
+                    <span class="cluster-sub">Density-grouped articles via HDBSCAN & summarized via local Phi-3 Mini</span>
+                </div>
+
+                <div class="clusters-grid" id="clusters-grid">
+                    <!-- Dynamic rendering -->
+                    <div class="grid-loading">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Loading news clusters...
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Script imports -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

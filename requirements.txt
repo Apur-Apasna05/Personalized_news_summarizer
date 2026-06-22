@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+feedparser
+python-dotenv
+numpy
+sentence-transformers
+hdbscan
+umap-learn
+chromadb
+apscheduler

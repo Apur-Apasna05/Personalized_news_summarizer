@@ -118,13 +118,86 @@ def _call_ollama(system_prompt: str, user_prompt: str) -> str:
 
 # ── RAG steps ─────────────────────────────────────────────────────────────────
 
+def get_cluster_field(cluster_id: int) -> str:
+    """Classify the cluster into 'world', 'science', or 'tech' based on article sources."""
+    from storage.database import get_connection
+    import json
+    try:
+        with get_connection() as conn:
+            row = conn.execute("SELECT article_ids FROM clusters WHERE id = ?", (cluster_id,)).fetchone()
+            if not row or not row[0]:
+                return "other"
+            article_ids = json.loads(row[0])
+            if not article_ids:
+                return "other"
+            placeholders = ",".join("?" * len(article_ids))
+            article_rows = conn.execute(
+                f"SELECT source FROM articles WHERE id IN ({placeholders})", 
+                article_ids
+            ).fetchall()
+        
+        sources = [r[0] for r in article_rows if r[0]]
+        if not sources:
+            return "other"
+            
+        tech_count = 0
+        world_count = 0
+        science_count = 0
+        
+        for s in sources:
+            s_lower = s.lower()
+            if "nasa" in s_lower:
+                science_count += 1
+            elif "world" in s_lower:
+                world_count += 1
+            else:
+                tech_count += 1
+                
+        if world_count >= science_count and world_count >= tech_count:
+            return "world"
+        elif science_count >= world_count and science_count >= tech_count:
+            return "science"
+        else:
+            return "tech"
+    except Exception as exc:
+        logger.warning("Failed to classify cluster %d field: %s", cluster_id, exc)
+        return "other"
+
+
+def diversify_results(candidates: list[dict], top_k: int) -> list[dict]:
+    """Select top_k candidates, ensuring diversity across world, science, and tech news fields."""
+    diversified = []
+    field_counts = {"world": 0, "science": 0, "tech": 0, "other": 0}
+    max_limit = max(1, top_k // 2)  # Allow at most 2 from each field for top_k=5
+    
+    remaining_candidates = []
+    for c in candidates:
+        field = get_cluster_field(c["id"])
+        c["field"] = field
+        if field_counts.get(field, 0) < max_limit:
+            diversified.append(c)
+            field_counts[field] = field_counts.get(field, 0) + 1
+            if len(diversified) == top_k:
+                break
+        else:
+            remaining_candidates.append(c)
+            
+    if len(diversified) < top_k:
+        for c in remaining_candidates:
+            diversified.append(c)
+            if len(diversified) == top_k:
+                break
+                
+    return diversified
+
+
 def retrieve(
     query: str,
     top_k: int = RAG_TOP_K,
     score_threshold: float = RAG_SCORE_THRESHOLD,
 ) -> list[dict]:
     """
-    Step 1: Retrieve the top-k most relevant cluster summaries.
+    Step 1: Retrieve the top-k most relevant cluster summaries, diversified by source field.
 
     Args:
         query          : User's natural-language question or keyword string.
@@ -133,11 +206,19 @@ def retrieve(
 
     Returns:
         List of cluster dicts with keys: id, label, summary,
-        article_count, created_at, similarity.
+        article_count, created_at, similarity, field.
     """
-    clusters = query_clusters(query, top_k=top_k, score_threshold=score_threshold)
-    logger.info("Retrieved %d clusters for query: '%s'", len(clusters), query)
-    return clusters
+    # Fetch a larger candidate pool to allow meaningful diversification
+    fetch_k = max(top_k * 3, 15)
+    candidates = query_clusters(query, top_k=fetch_k, score_threshold=score_threshold)
+    
+    if not candidates:
+        return []
+        
+    diversified = diversify_results(candidates, top_k)
+    logger.info("Retrieved %d diversified clusters for query: '%s'", len(diversified), query)
+    return diversified
+
 
 
 def generate(context_clusters: list[dict], query: str) -> str:

@@ -74,7 +74,8 @@ def personalised_retrieve(
         )
         for c in candidates:
             c["personalised_score"] = c["similarity"]
-        return candidates[:top_k]
+        from rag.chain import diversify_results
+        return diversify_results(candidates, top_k)
 
     # Max weight for normalisation (so personal scores stay in [0,1])
     max_weight = max(weights.values()) if weights else 1.0
@@ -101,4 +102,5 @@ def personalised_retrieve(
         "personalised_retrieve('%s', user='%s') → %d results",
         query, user_id, len(candidates[:top_k]),
     )
-    return candidates[:top_k]
+    from rag.chain import diversify_results
+    return diversify_results(candidates, top_k)

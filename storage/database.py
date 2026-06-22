@@ -56,7 +56,7 @@ def get_connection():
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 def init_db() -> None:
-    """Create all tables if they don't exist."""
+    """Create all tables if they don't exist — articles, clusters, user profiles."""
     with get_connection() as conn:
         # Articles (Phase 1)
         conn.execute("""
@@ -89,6 +89,8 @@ def init_db() -> None:
             )
         """)
     logger.info("Database initialised at %s", DB_PATH)
+    from storage.user_profiles import init_user_tables
+    init_user_tables()
 
 
 # ── Articles (Phase 1 — unchanged) ───────────────────────────────────────────
@@ -241,11 +243,4 @@ def clear_clusters() -> None:
         conn.execute("DELETE FROM clusters")
     logger.info("Clusters table cleared for re-clustering.")
     
-    
-def init_db() -> None:
-    """Create all tables if they don't exist — articles, clusters, user profiles."""
-    # ... existing code unchanged ...
-
-    # Add this at the end of init_db():
-    from storage.user_profiles import init_user_tables
-    init_user_tables()
+    

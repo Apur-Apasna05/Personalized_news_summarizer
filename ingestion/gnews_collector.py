@@ -18,7 +18,7 @@ import time
 
 import requests
 
-from Personalized_news_summarizer.config.settings import (
+from config.settings import (
     GNEWS_API_KEY,
     GNEWS_MAX_ARTICLES,
     GNEWS_TOPICS,
@@ -33,7 +33,7 @@ GNEWS_ENDPOINT = "https://gnews.io/api/v4/top-headlines"
 
 def _fetch_topic(topic: str) -> list[dict]:
     """Call GNews for one topic; return list of raw article dicts."""
-    if not GNEWS_API_KEY:
+    if not GNEWS_API_KEY or GNEWS_API_KEY == "your_gnews_api_key_here":
         logger.warning("GNEWS_API_KEY not set — skipping GNews collector.")
         return []
 

@@ -16,7 +16,7 @@ import time
 from email.utils import parsedate_to_datetime
 import feedparser
  
-from Personalized_news_summarizer.config.settings import REQUEST_DELAY_SECONDS, RSS_FEEDS
+from config.settings import REQUEST_DELAY_SECONDS, RSS_FEEDS
 from storage.database import insert_article
  
 logger = logging.getLogger(__name__)

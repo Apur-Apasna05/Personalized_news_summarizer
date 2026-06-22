@@ -32,6 +32,18 @@ GNEWS_TOPICS = [
 # ── RSS feeds ───────────────────────────────────────────────
 # Add any RSS/Atom feed URL here. Label is used for source tagging.
 RSS_FEEDS = [
+    # ── India News ──────────────────────────────────────────
+    {"label": "The Hindu - India News", "url": "https://www.thehindu.com/news/national/feeder/default.rss"},
+    {"label": "The Hindu - Telangana",  "url": "https://www.thehindu.com/news/national/telangana/feeder/default.rss"},
+    {"label": "TOI - India News",      "url": "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms"},
+    {"label": "TOI - Hyderabad",       "url": "https://timesofindia.indiatimes.com/rssfeeds/390840.cms"},
+    {"label": "NDTV - India News",      "url": "https://feeds.feedburner.com/ndtvnews-india-news"},
+    {"label": "Indian Express - India", "url": "https://indianexpress.com/section/india/feed/"},
+    {"label": "Hindustan Times - India", "url": "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml"},
+    {"label": "Economic Times - Business", "url": "https://economictimes.indiatimes.com/rssfeedstopstories.cms"},
+    {"label": "News18 - India News",    "url": "https://www.news18.com/rss/india.xml"},
+    
+    # ── Abroad/Global News ──────────────────────────────────
     {"label": "BBC World",       "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
     {"label": "BBC Technology",  "url": "http://feeds.bbci.co.uk/news/technology/rss.xml"},
     {"label": "Reuters Top News","url": "https://feeds.reuters.com/reuters/topNews"},
@@ -103,7 +115,7 @@ CHROMA_COLLECTION  = os.getenv("CHROMA_COLLECTION", "news_clusters")
 # Number of top-k clusters retrieved per query.
 RAG_TOP_K           = int(os.getenv("RAG_TOP_K", 5))
 # Minimum cosine similarity score to include a result (0–1).
-RAG_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", 0.0))
+RAG_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", 0.38))
 
 # ── Personalization (Phase 4) ────────────────────────────────
 # Blend factor: 0.0 = pure semantic, 1.0 = pure preference

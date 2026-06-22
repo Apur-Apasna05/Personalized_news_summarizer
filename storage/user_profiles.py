@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def _conn():
+    import os
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
