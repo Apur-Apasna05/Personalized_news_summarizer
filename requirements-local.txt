@@ -1,0 +1,4 @@
+sentence-transformers
+hdbscan
+umap-learn
+chromadb

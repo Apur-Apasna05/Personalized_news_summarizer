@@ -16,6 +16,8 @@ from storage.database import (
     cluster_count,
     fetch_all_clusters,
     get_connection,
+    db_execute,
+    fetch_rows,
 )
 from storage.user_profiles import (
     get_or_create_profile,
@@ -63,11 +65,14 @@ def get_articles_by_ids(ids: List[int]) -> List[dict]:
         return []
     placeholders = ",".join("?" * len(ids))
     with get_connection() as conn:
-        rows = conn.execute(
+        cursor = conn.cursor()
+        db_execute(
+            cursor,
             f"SELECT id, url, title, source, topic, published_at FROM articles WHERE id IN ({placeholders})",
             ids
-        ).fetchall()
-    return [dict(r) for r in rows]
+        )
+        rows = fetch_rows(cursor)
+    return rows
 
 # --- Background Task Workers ---
 

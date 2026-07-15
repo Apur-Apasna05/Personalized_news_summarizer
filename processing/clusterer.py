@@ -24,7 +24,6 @@ import logging
 from dataclasses import dataclass, field
 
 import numpy as np
-import hdbscan
 
 from config.settings import HDBSCAN_MIN_CLUSTER_SIZE, HDBSCAN_MIN_SAMPLES
 
@@ -76,6 +75,55 @@ def _reduce_dimensions(embeddings: np.ndarray) -> np.ndarray:
         return embeddings
 
 
+def cluster_embeddings_fallback(embeddings: np.ndarray) -> list[ClusterResult]:
+    """
+    NumPy-only threshold-based clustering.
+    Groups articles by cosine similarity above a threshold.
+    """
+    n = len(embeddings)
+    if n == 0:
+        return []
+
+    # Cosine similarity threshold for news clusters
+    SIMILARITY_THRESHOLD = 0.68
+    MIN_CLUSTER_SIZE = 3
+
+    # Normalize embeddings for dot product cosine similarity
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1e-12
+    norm_embeddings = embeddings / norms
+
+    similarity_matrix = np.dot(norm_embeddings, norm_embeddings.T)
+
+    clustered = np.zeros(n, dtype=bool)
+    results = []
+
+    cluster_id_counter = 0
+    for i in range(n):
+        if clustered[i]:
+            continue
+
+        sim_scores = similarity_matrix[i]
+        # Find all unclustered indices that are sufficiently similar
+        neighbors = np.where((sim_scores >= SIMILARITY_THRESHOLD) & (~clustered))[0]
+
+        if len(neighbors) >= MIN_CLUSTER_SIZE:
+            clustered[neighbors] = True
+            results.append(ClusterResult(cluster_id=cluster_id_counter, article_indices=list(neighbors)))
+            cluster_id_counter += 1
+
+    # Remaining unclustered articles are noise (-1)
+    for i in range(n):
+        if not clustered[i]:
+            results.append(ClusterResult(cluster_id=-1, article_indices=[i]))
+
+    logger.info(
+        "Fallback NumPy clustering found %d clusters, %d noise/singleton articles",
+        cluster_id_counter, sum(1 for r in results if r.is_noise)
+    )
+    return results
+
+
 def cluster_embeddings(embeddings: np.ndarray) -> list[ClusterResult]:
     """
     Run HDBSCAN on embeddings and return a list of ClusterResult objects.
@@ -94,6 +142,12 @@ def cluster_embeddings(embeddings: np.ndarray) -> list[ClusterResult]:
     if n == 0:
         logger.warning("No embeddings to cluster.")
         return []
+
+    try:
+        import hdbscan
+    except ImportError:
+        logger.warning("hdbscan is not installed. Falling back to NumPy-based threshold clustering.")
+        return cluster_embeddings_fallback(embeddings)
 
     if n < HDBSCAN_MIN_CLUSTER_SIZE:
         logger.warning(

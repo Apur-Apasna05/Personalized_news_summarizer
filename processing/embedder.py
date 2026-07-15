@@ -16,7 +16,7 @@ Input text strategy
 import logging
 import numpy as np
 
-from config.settings import EMBEDDING_MODEL
+from config.settings import EMBEDDING_MODEL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +46,43 @@ def embed_texts(texts: list[str], batch_size: int = 64) -> np.ndarray:
     if not texts:
         return np.array([])
 
-    model = _get_model()
-    embeddings = model.encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=len(texts) > 50,
-        normalize_embeddings=True,   # unit vectors → cosine similarity = dot product
-        convert_to_numpy=True,
-    )
-    logger.info("Embedded %d texts → shape %s", len(texts), embeddings.shape)
-    return embeddings
+    if GEMINI_API_KEY:
+        import requests
+        embeddings_list = []
+        # Gemini batch embedding limit is 100 per request
+        limit = min(batch_size, 100)
+        
+        for i in range(0, len(texts), limit):
+            chunk = texts[i:i + limit]
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={GEMINI_API_KEY}"
+            payload = {
+                "requests": [
+                    {
+                        "model": "models/text-embedding-004",
+                        "content": {
+                            "parts": [{"text": text}]
+                        }
+                    } for text in chunk
+                ]
+            }
+            logger.info("Calling Gemini Embeddings API for batch of %d texts...", len(chunk))
+            resp = requests.post(url, json=payload, timeout=60)
+            resp.raise_for_status()
+            chunk_embeddings = [emb["values"] for emb in resp.json().get("embeddings", [])]
+            embeddings_list.extend(chunk_embeddings)
+            
+        return np.array(embeddings_list)
+    else:
+        model = _get_model()
+        embeddings = model.encode(
+            texts,
+            batch_size=batch_size,
+            show_progress_bar=len(texts) > 50,
+            normalize_embeddings=True,   # unit vectors → cosine similarity = dot product
+            convert_to_numpy=True,
+        )
+        logger.info("Embedded %d texts → shape %s", len(texts), embeddings.shape)
+        return embeddings
 
 
 def embed_single(text: str) -> np.ndarray:

@@ -34,9 +34,19 @@ from config.settings import (
     CHROMA_COLLECTION,
     RAG_TOP_K,
     RAG_SCORE_THRESHOLD,
+    GEMINI_API_KEY,
 )
 
 logger = logging.getLogger(__name__)
+
+# Check if we should use ChromaDB or fallback to DB-based search
+USE_CHROMA = False
+if not GEMINI_API_KEY:
+    try:
+        import chromadb
+        USE_CHROMA = True
+    except ImportError:
+        logger.info("chromadb is not installed. Will use DB-based NumPy vector search.")
 
 # Module-level client + collection cache
 _client = None
@@ -48,12 +58,14 @@ _collection = None
 def _get_collection():
     """Return (and lazily initialise) the ChromaDB collection."""
     global _client, _collection
+    if not USE_CHROMA:
+        return None
+
     if _collection is not None:
         return _collection
 
     try:
         import chromadb
-        from chromadb.config import Settings
     except ImportError as exc:
         raise ImportError(
             "chromadb is not installed. Run:  pip install chromadb"
@@ -85,7 +97,7 @@ def _cluster_doc_id(sqlite_id: int) -> str:
 
 def upsert_clusters(clusters: list[dict]) -> int:
     """
-    Upsert a list of cluster dicts into ChromaDB.
+    Upsert a list of cluster dicts into ChromaDB (or do nothing if fallback is active).
 
     Each cluster dict must have at least:
         id        : int   — SQLite cluster id
@@ -101,6 +113,10 @@ def upsert_clusters(clusters: list[dict]) -> int:
     if not clusters:
         logger.info("upsert_clusters: nothing to upsert.")
         return 0
+
+    if not USE_CHROMA:
+        logger.info("upsert_clusters (fallback): skipping ChromaDB write.")
+        return sum(1 for c in clusters if c.get("embedding") is not None)
 
     col = _get_collection()
 
@@ -164,6 +180,47 @@ def query_clusters(
             similarity (float 0-1)
         Sorted by similarity descending.
     """
+    if not USE_CHROMA:
+        from storage.database import fetch_all_cluster_embeddings
+        from processing.embedder import embed_single
+
+        logger.info("query_clusters (fallback): performing DB-based vector search.")
+        clusters = fetch_all_cluster_embeddings()
+        if not clusters:
+            logger.warning("No clusters found in database.")
+            return []
+
+        # Embed the query
+        query_embedding = embed_single(query)
+
+        output = []
+        for c in clusters:
+            emb = c.get("embedding")
+            if emb is None:
+                continue
+
+            # Calculate cosine similarity using numpy
+            dot_prod = np.dot(query_embedding, emb)
+            norm_q = np.linalg.norm(query_embedding)
+            norm_emb = np.linalg.norm(emb)
+            similarity = float(dot_prod / (norm_q * norm_emb)) if (norm_q * norm_emb) > 0 else 0.0
+
+            if similarity < score_threshold:
+                continue
+
+            output.append({
+                "id":            c["id"],
+                "label":         c.get("label", ""),
+                "summary":       c.get("summary", ""),
+                "article_count": c.get("article_count", 0),
+                "created_at":    c.get("created_at", ""),
+                "similarity":    round(similarity, 4),
+            })
+
+        # Sort descending by similarity
+        output.sort(key=lambda x: x["similarity"], reverse=True)
+        return output[:top_k]
+
     from processing.embedder import embed_single
 
     col = _get_collection()
@@ -210,21 +267,21 @@ def query_clusters(
 
 def sync_from_db() -> int:
     """
-    Full refresh: read ALL clusters (with embeddings) from SQLite and
+    Full refresh: read ALL clusters (with embeddings) from SQLite/Postgres and
     upsert them into ChromaDB.
 
     Call this:
       - After every Phase 2 processing run.
       - After a full re-cluster (clear_clusters + reprocess).
-      - On application startup to restore the Chroma state from SQLite truth.
+      - On application startup to restore the Chroma state from database truth.
 
     Returns the number of clusters synced.
     """
     from storage.database import fetch_all_cluster_embeddings
 
-    logger.info("sync_from_db: reading all clusters from SQLite...")
+    logger.info("sync_from_db: reading all clusters from database...")
     clusters = fetch_all_cluster_embeddings()
-    logger.info("sync_from_db: found %d clusters in SQLite.", len(clusters))
+    logger.info("sync_from_db: found %d clusters in database.", len(clusters))
 
     if not clusters:
         return 0
@@ -233,7 +290,15 @@ def sync_from_db() -> int:
 
 
 def collection_stats() -> dict:
-    """Return basic stats about the ChromaDB collection."""
+    """Return basic stats about the ChromaDB collection (or DB counts in fallback)."""
+    if not USE_CHROMA:
+        from storage.database import cluster_count
+        return {
+            "collection": "database_fallback",
+            "persist_dir": "N/A (database fallback)",
+            "doc_count": cluster_count(),
+        }
+
     col = _get_collection()
     return {
         "collection": CHROMA_COLLECTION,
@@ -244,6 +309,9 @@ def collection_stats() -> dict:
 
 def delete_cluster(sqlite_id: int) -> None:
     """Remove a single cluster from ChromaDB by its SQLite id."""
+    if not USE_CHROMA:
+        return
+
     col = _get_collection()
     col.delete(ids=[_cluster_doc_id(sqlite_id)])
     logger.info("Deleted cluster %d from ChromaDB.", sqlite_id)
@@ -254,6 +322,9 @@ def reset_collection() -> None:
     Wipe the entire ChromaDB collection and recreate it.
     Use before a full re-cluster run so stale entries don't persist.
     """
+    if not USE_CHROMA:
+        return
+
     global _collection
     col = _get_collection()
     col.delete(where={"sqlite_id": {"$gte": 0}})   # delete all docs

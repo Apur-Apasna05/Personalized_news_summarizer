@@ -36,7 +36,7 @@ You can also call the lower-level helpers directly:
 import logging
 from dataclasses import dataclass, field
 
-from config.settings import RAG_TOP_K, RAG_SCORE_THRESHOLD, OLLAMA_BASE_URL, OLLAMA_MODEL
+from config.settings import RAG_TOP_K, RAG_SCORE_THRESHOLD, OLLAMA_BASE_URL, OLLAMA_MODEL, GEMINI_API_KEY
 from storage.vector_store import query_clusters
 from rag.prompt_templates import SYSTEM_PROMPT, rag_user_prompt, no_context_prompt
 
@@ -71,72 +71,95 @@ class RAGResult:
 
 # ── Ollama call (reuse pattern from summarizer, keep DRY) ─────────────────────
 
-def _call_ollama(system_prompt: str, user_prompt: str) -> str:
+def _call_llm(system_prompt: str, user_prompt: str) -> str:
     """
-    Send a system + user prompt to Ollama and return the response text.
+    Send a system + user prompt to Gemini or Ollama and return the response text.
 
     We build a minimal instruction-following prompt by concatenating
-    system and user messages — Phi-3 Mini responds well to this format.
-    Raises RuntimeError if Ollama is unreachable.
+    system and user messages.
     """
-    import time
-    import requests
-
-    full_prompt = f"{system_prompt}\n\n{user_prompt}"
-    payload = {
-        "model":  OLLAMA_MODEL,
-        "prompt": full_prompt,
-        "stream": False,
-        "options": {
-            "num_predict": 400,    # slightly more room for answers than summaries
-            "temperature": 0.4,
-        },
-    }
-
-    endpoint = f"{OLLAMA_BASE_URL}/api/generate"
-    max_retries = 3
-
-    for attempt in range(1, max_retries + 1):
+    if GEMINI_API_KEY:
+        import requests
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{"parts": [{"text": full_prompt}]}],
+            "generationConfig": {
+                "temperature": 0.4,
+                "maxOutputTokens": 400
+            }
+        }
+        logger.info("Calling Gemini LLM API for RAG chain...")
+        resp = requests.post(url, json=payload, timeout=60)
+        resp.raise_for_status()
         try:
-            resp = requests.post(endpoint, json=payload, timeout=90)
-            resp.raise_for_status()
-            return resp.json().get("response", "").strip()
-        except requests.exceptions.ConnectionError:
-            if attempt == max_retries:
-                raise RuntimeError(
-                    "Cannot connect to Ollama. Make sure it's running:\n"
-                    "  ollama serve\n"
-                    f"  ollama pull {OLLAMA_MODEL}"
-                )
-            logger.warning("Ollama unreachable, retrying (%d/%d)...", attempt, max_retries)
-            time.sleep(2.0)
-        except requests.RequestException as exc:
-            raise RuntimeError(f"Ollama request failed: {exc}") from exc
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except (KeyError, IndexError) as e:
+            logger.error("Failed to parse Gemini response: %s", e)
+            raise RuntimeError("Invalid response structure from Gemini API") from e
+    else:
+        import time
+        import requests
 
-    return ""
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        payload = {
+            "model":  OLLAMA_MODEL,
+            "prompt": full_prompt,
+            "stream": False,
+            "options": {
+                "num_predict": 400,    # slightly more room for answers than summaries
+                "temperature": 0.4,
+            },
+        }
+
+        endpoint = f"{OLLAMA_BASE_URL}/api/generate"
+        max_retries = 3
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.post(endpoint, json=payload, timeout=90)
+                resp.raise_for_status()
+                return resp.json().get("response", "").strip()
+            except requests.exceptions.ConnectionError:
+                if attempt == max_retries:
+                    raise RuntimeError(
+                        "Cannot connect to Ollama. Make sure it's running:\n"
+                        "  ollama serve\n"
+                        f"  ollama pull {OLLAMA_MODEL}"
+                    )
+                logger.warning("Ollama unreachable, retrying (%d/%d)...", attempt, max_retries)
+                time.sleep(2.0)
+            except requests.RequestException as exc:
+                raise RuntimeError(f"Ollama request failed: {exc}") from exc
+
+        return ""
 
 
 # ── RAG steps ─────────────────────────────────────────────────────────────────
 
 def get_cluster_field(cluster_id: int) -> str:
     """Classify the cluster into 'world', 'science', or 'tech' based on article sources."""
-    from storage.database import get_connection
+    from storage.database import get_connection, db_execute, fetch_row, fetch_rows
     import json
     try:
         with get_connection() as conn:
-            row = conn.execute("SELECT article_ids FROM clusters WHERE id = ?", (cluster_id,)).fetchone()
-            if not row or not row[0]:
+            cursor = conn.cursor()
+            db_execute(cursor, "SELECT article_ids FROM clusters WHERE id = ?", (cluster_id,))
+            row = fetch_row(cursor)
+            if not row or not row.get("article_ids"):
                 return "other"
-            article_ids = json.loads(row[0])
+            article_ids = json.loads(row["article_ids"])
             if not article_ids:
                 return "other"
             placeholders = ",".join("?" * len(article_ids))
-            article_rows = conn.execute(
+            db_execute(
+                cursor,
                 f"SELECT source FROM articles WHERE id IN ({placeholders})", 
                 article_ids
-            ).fetchall()
+            )
+            article_rows = fetch_rows(cursor)
         
-        sources = [r[0] for r in article_rows if r[0]]
+        sources = [r.get("source") for r in article_rows if r.get("source")]
         if not sources:
             return "other"
             
@@ -223,7 +246,7 @@ def retrieve(
 
 def generate(context_clusters: list[dict], query: str) -> str:
     """
-    Step 2: Given retrieved context + the original query, call Ollama
+    Step 2: Given retrieved context + the original query, call LLM (Gemini or Ollama)
     and return the generated answer.
 
     Handles the empty-context case gracefully (informs user).
@@ -235,12 +258,12 @@ def generate(context_clusters: list[dict], query: str) -> str:
         user_prompt = rag_user_prompt(query, context_clusters)
 
     try:
-        answer = _call_ollama(SYSTEM_PROMPT, user_prompt)
+        answer = _call_llm(SYSTEM_PROMPT, user_prompt)
     except RuntimeError as exc:
-        logger.error("Ollama generation failed: %s", exc)
+        logger.error("LLM generation failed: %s", exc)
         answer = (
             "Sorry, I couldn't generate an answer right now because the "
-            "language model is unavailable. Please ensure Ollama is running."
+            "language model is unavailable. Please check your connection or LLM status."
         )
 
     return answer

@@ -23,7 +23,7 @@ import time
 
 import requests
 
-from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_MAX_TOKENS
+from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_MAX_TOKENS, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -37,39 +37,57 @@ MAX_RETRIES   = 3
 RETRY_DELAY_S = 2.0
 
 
-# ── Ollama client ─────────────────────────────────────────────────────────────
+# ── LLM client ─────────────────────────────────────────────────────────────
 
-def _ollama_generate(prompt: str) -> str:
+def _llm_generate(prompt: str) -> str:
     """
-    Send a prompt to Ollama and return the response text.
-    Raises RuntimeError if Ollama is unreachable after retries.
+    Send a prompt to Gemini or Ollama and return the response text.
     """
-    payload = {
-        "model":  OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "num_predict": OLLAMA_MAX_TOKENS,
-            "temperature": 0.3,    # low temp → factual, consistent summaries
-        },
-    }
-
-    for attempt in range(1, MAX_RETRIES + 1):
+    if GEMINI_API_KEY:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": OLLAMA_MAX_TOKENS
+            }
+        }
+        logger.info("Calling Gemini LLM API for summarization...")
+        resp = requests.post(url, json=payload, timeout=60)
+        resp.raise_for_status()
         try:
-            resp = requests.post(OLLAMA_ENDPOINT, json=payload, timeout=60)
-            resp.raise_for_status()
-            return resp.json().get("response", "").strip()
-        except requests.exceptions.ConnectionError:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(
-                    "Cannot connect to Ollama. Is it running?\n"
-                    "  ollama serve\n"
-                    "  ollama pull phi3:mini"
-                )
-            logger.warning("Ollama unreachable, retrying (%d/%d)...", attempt, MAX_RETRIES)
-            time.sleep(RETRY_DELAY_S)
-        except requests.RequestException as exc:
-            raise RuntimeError(f"Ollama request failed: {exc}") from exc
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except (KeyError, IndexError) as e:
+            logger.error("Failed to parse Gemini response: %s", e)
+            raise RuntimeError("Invalid response structure from Gemini API") from e
+    else:
+        # Fallback to Ollama
+        payload = {
+            "model":  OLLAMA_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "num_predict": OLLAMA_MAX_TOKENS,
+                "temperature": 0.3,
+            },
+        }
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                resp = requests.post(OLLAMA_ENDPOINT, json=payload, timeout=60)
+                resp.raise_for_status()
+                return resp.json().get("response", "").strip()
+            except requests.exceptions.ConnectionError:
+                if attempt == MAX_RETRIES:
+                    raise RuntimeError(
+                        "Cannot connect to Ollama. Is it running?\n"
+                        "  ollama serve\n"
+                        "  ollama pull phi3:mini"
+                    )
+                logger.warning("Ollama unreachable, retrying (%d/%d)...", attempt, MAX_RETRIES)
+                time.sleep(RETRY_DELAY_S)
+            except requests.RequestException as exc:
+                raise RuntimeError(f"Ollama request failed: {exc}") from exc
 
     return ""
 
@@ -136,7 +154,7 @@ def summarize_cluster(articles: list[dict]) -> tuple[str, str]:
 
     # Label
     try:
-        label = _ollama_generate(_label_prompt(article_block))
+        label = _llm_generate(_label_prompt(article_block))
         label = label.strip().strip('"').strip("'")
         if not label or len(label) > 80:
             label = articles[0].get("title", "News Cluster")[:60]
@@ -146,7 +164,7 @@ def summarize_cluster(articles: list[dict]) -> tuple[str, str]:
 
     # Summary
     try:
-        summary = _ollama_generate(_summary_prompt(article_block))
+        summary = _llm_generate(_summary_prompt(article_block))
     except RuntimeError as exc:
         logger.error("Summary generation failed: %s", exc)
         # Fall back to concatenating snippets

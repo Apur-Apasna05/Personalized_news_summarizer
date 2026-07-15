@@ -44,7 +44,7 @@ def _get(url: str) -> BeautifulSoup | None:
     try:
         resp = requests.get(url, headers=REQUEST_HEADERS, timeout=12)
         resp.raise_for_status()
-        return BeautifulSoup(resp.text, "lxml")
+        return BeautifulSoup(resp.text, "html.parser")
     except requests.RequestException as exc:
         logger.warning("Request failed for %s: %s", url, exc)
         return None

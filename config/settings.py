@@ -11,9 +11,11 @@ load_dotenv()
  
 # ── API keys ────────────────────────────────────────────────
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
  
 # ── Storage ─────────────────────────────────────────────────
 DB_PATH = os.getenv("DB_PATH", "data/news.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
  
 # ── GNews settings ──────────────────────────────────────────
 GNEWS_MAX_ARTICLES = int(os.getenv("GNEWS_MAX_ARTICLES", 10))
